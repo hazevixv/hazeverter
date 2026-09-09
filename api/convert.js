@@ -15,6 +15,7 @@ module.exports.config = {
 };
 
 module.exports = async function handler(req, res) {
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -46,6 +47,7 @@ module.exports = async function handler(req, res) {
         return res.status(500).json({ error: 'API Key Adobe belum diatur di Vercel.' });
       }
 
+      // Kredensial Adobe SDK v4
       const credentials = Credentials.servicePrincipalCredentialsBuilder()
         .withClientId(clientId)
         .withClientSecret(clientSecret)
@@ -53,14 +55,19 @@ module.exports = async function handler(req, res) {
 
       const pdfServices = new PDFServices({ credentials });
 
+      // Ambil file yang diupload
       const fileItem = Array.isArray(files.file) ? files.file[0] : files.file;
       if (!fileItem || !fileItem.filepath) {
         return res.status(400).json({ error: 'File PDF tidak terdeteksi.' });
       }
 
       const fileStream = fs.createReadStream(fileItem.filepath);
-      const inputAsset = await pdfServices.upload({ stream: fileStream, mimeType: 'application/pdf' });
+      const inputAsset = await pdfServices.upload({ 
+        stream: fileStream, 
+        mimeType: 'application/pdf' 
+      });
 
+      // Tentukan format target
       const rawTarget = Array.isArray(fields.targetType) ? fields.targetType[0] : fields.targetType;
       let targetFormat = ExportPDFTargetFormat.DOCX;
       if (rawTarget === 'pptx') targetFormat = ExportPDFTargetFormat.PPTX;
@@ -69,6 +76,7 @@ module.exports = async function handler(req, res) {
       const params = new ExportPDFParams({ targetFormat });
       const job = new ExportPDFJob({ inputAsset, params });
 
+      // Submit & Polling
       const pollingURL = await pdfServices.submit({ job });
       const pdfServicesResponse = await pdfServices.getJobResult({ 
         pollingURL, 
@@ -80,19 +88,24 @@ module.exports = async function handler(req, res) {
         throw new Error('Adobe Cloud tidak mengembalikan hasil file.');
       }
 
+      // Ambil Asset Content untuk SDK v4
       const streamAsset = await pdfServices.getContent({ asset: resultAsset });
 
-      if (rawTarget === 'docx') {
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      } else if (rawTarget === 'pptx') {
+      // Penyesuaian Content-Type
+      if (rawTarget === 'pptx') {
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
       } else if (rawTarget === 'xlsx') {
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      } else {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       }
 
-      streamAsset.stream.pipe(res);
+      // PERBAIKAN UTAMA: SDK v4 menyediakan readStream langsung dari streamAsset
+      const readStream = streamAsset.readStream || streamAsset.stream;
+      
+      readStream.pipe(res);
 
-      streamAsset.stream.on('end', () => {
+      readStream.on('end', () => {
         try { fs.unlinkSync(fileItem.filepath); } catch (e) {}
       });
 
