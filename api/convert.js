@@ -3,7 +3,8 @@ const {
   Credentials, 
   ExportPDFJob, 
   ExportPDFParams, 
-  ExportPDFTargetFormat 
+  ExportPDFTargetFormat,
+  CreatePDFJob
 } = require('@adobe/pdfservices-node-sdk');
 const formidable = require('formidable');
 const fs = require('fs');
@@ -14,30 +15,28 @@ module.exports.config = {
   },
 };
 
+// Pemetaan MIME Type untuk dokumen Office
+const MIME_TYPES = {
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+};
+
 module.exports = async function handler(req, res) {
-  // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const form = formidable({
-    uploadDir: '/tmp',
-    keepExtensions: true,
-  });
+  const form = formidable({ uploadDir: '/tmp', keepExtensions: true });
 
   form.parse(req, async (err, fields, files) => {
-    if (err) {
-      console.error('Formidable Error:', err);
-      return res.status(500).json({ error: 'Gagal membaca file upload' });
-    }
+    if (err) return res.status(500).json({ error: 'Gagal membaca file upload' });
 
     try {
       const clientId = process.env.ADOBE_CLIENT_ID;
@@ -47,7 +46,6 @@ module.exports = async function handler(req, res) {
         return res.status(500).json({ error: 'API Key Adobe belum diatur di Vercel.' });
       }
 
-      // Kredensial Adobe SDK v4
       const credentials = Credentials.servicePrincipalCredentialsBuilder()
         .withClientId(clientId)
         .withClientSecret(clientSecret)
@@ -55,54 +53,75 @@ module.exports = async function handler(req, res) {
 
       const pdfServices = new PDFServices({ credentials });
 
-      // Ambil file yang diupload
       const fileItem = Array.isArray(files.file) ? files.file[0] : files.file;
+      const conversionType = Array.isArray(fields.conversionType) ? fields.conversionType[0] : fields.conversionType;
+
       if (!fileItem || !fileItem.filepath) {
-        return res.status(400).json({ error: 'File PDF tidak terdeteksi.' });
+        return res.status(400).json({ error: 'File tidak terdeteksi.' });
       }
 
       const fileStream = fs.createReadStream(fileItem.filepath);
-      const inputAsset = await pdfServices.upload({ 
-        stream: fileStream, 
-        mimeType: 'application/pdf' 
-      });
+      let job, contentTypeOutput, outputFilename;
 
-      // Tentukan format target
-      const rawTarget = Array.isArray(fields.targetType) ? fields.targetType[0] : fields.targetType;
-      let targetFormat = ExportPDFTargetFormat.DOCX;
-      if (rawTarget === 'pptx') targetFormat = ExportPDFTargetFormat.PPTX;
-      if (rawTarget === 'xlsx') targetFormat = ExportPDFTargetFormat.XLSX;
+      // ===================================================
+      // A. OPERASI KONVERSI: PDF TO (WORD / PPT / EXCEL)
+      // ===================================================
+      if (['pdf-to-word', 'pdf-to-ppt', 'pdf-to-excel'].includes(conversionType)) {
+        const inputAsset = await pdfServices.upload({ stream: fileStream, mimeType: 'application/pdf' });
 
-      const params = new ExportPDFParams({ targetFormat });
-      const job = new ExportPDFJob({ inputAsset, params });
+        let targetFormat = ExportPDFTargetFormat.DOCX;
+        if (conversionType === 'pdf-to-ppt') targetFormat = ExportPDFTargetFormat.PPTX;
+        if (conversionType === 'pdf-to-excel') targetFormat = ExportPDFTargetFormat.XLSX;
 
-      // Submit & Polling
+        const params = new ExportPDFParams({ targetFormat });
+        job = new ExportPDFJob({ inputAsset, params });
+
+        if (conversionType === 'pdf-to-word') {
+          contentTypeOutput = MIME_TYPES.docx;
+          outputFilename = 'converted.docx';
+        } else if (conversionType === 'pdf-to-ppt') {
+          contentTypeOutput = MIME_TYPES.pptx;
+          outputFilename = 'converted.pptx';
+        } else {
+          contentTypeOutput = MIME_TYPES.xlsx;
+          outputFilename = 'converted.xlsx';
+        }
+      } 
+      
+      // ===================================================
+      // B. OPERASI KONVERSI: (WORD / PPT / EXCEL) TO PDF
+      // ===================================================
+      else if (['word-to-pdf', 'ppt-to-pdf', 'excel-to-pdf'].includes(conversionType)) {
+        const ext = fileItem.originalFilename ? fileItem.originalFilename.split('.').pop().toLowerCase() : '';
+        const mimeTypeInput = MIME_TYPES[ext] || 'application/octet-stream';
+
+        const inputAsset = await pdfServices.upload({ stream: fileStream, mimeType: mimeTypeInput });
+        job = new CreatePDFJob({ inputAsset });
+
+        contentTypeOutput = 'application/pdf';
+        outputFilename = 'converted.pdf';
+      } else {
+        return res.status(400).json({ error: 'Jenis konversi tidak valid.' });
+      }
+
+      // Submit & Polling ke Adobe Cloud
       const pollingURL = await pdfServices.submit({ job });
+      const jobClass = ['word-to-pdf', 'ppt-to-pdf', 'excel-to-pdf'].includes(conversionType) ? CreatePDFJob : ExportPDFJob;
+      
       const pdfServicesResponse = await pdfServices.getJobResult({ 
         pollingURL, 
-        resultType: ExportPDFJob 
+        resultType: jobClass 
       });
 
       const resultAsset = pdfServicesResponse.result?.asset;
-      if (!resultAsset) {
-        throw new Error('Adobe Cloud tidak mengembalikan hasil file.');
-      }
+      if (!resultAsset) throw new Error('Adobe Cloud tidak mengembalikan hasil file.');
 
-      // Ambil Asset Content untuk SDK v4
       const streamAsset = await pdfServices.getContent({ asset: resultAsset });
 
-      // Penyesuaian Content-Type
-      if (rawTarget === 'pptx') {
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
-      } else if (rawTarget === 'xlsx') {
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      } else {
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      }
+      res.setHeader('Content-Type', contentTypeOutput);
+      res.setHeader('Content-Disposition', `attachment; filename="${outputFilename}"`);
 
-      // PERBAIKAN UTAMA: SDK v4 menyediakan readStream langsung dari streamAsset
       const readStream = streamAsset.readStream || streamAsset.stream;
-      
       readStream.pipe(res);
 
       readStream.on('end', () => {
