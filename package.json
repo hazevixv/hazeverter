@@ -3,8 +3,14 @@
   "version": "1.0.0",
   "description": "Hazeverter PDF Utilities and Smart Scanner",
   "main": "index.html",
+  "scripts": {
+    "build": "echo 'No build required for static frontend'"
+  },
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
-    "@adobe/pdf-services-sdk": "^4.1.0",
+    "@adobe/pdf-services-sdk": "3.5.1",
     "formidable": "^3.5.1"
   }
 }
