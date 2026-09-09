@@ -1,0 +1,8 @@
+◇ injected env (2) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+No logging configuration. Using default config
+====================================================
+ Hazeverter Adobe Proxy running on http://localhost:3000
+ Endpoint: POST /api/convert
+ Endpoint: GET  /api/health
+ Adobe credentials: OK
+====================================================

@@ -22,7 +22,7 @@
 > **Tujuan:** Server boot dengan dependency baru, middleware stack (helmet + cors + rate limit + correlation ID), endpoint `/api/health`, helper `lib/` siap dipakai handler.
 > **Deliverable:** `curl http://localhost:3000/api/health` → 200 JSON dengan header `X-Correlation-Id`.
 
-- [ ] **1.1** Tambah 4 dependency baru ke `package.json` (`helmet`, `express-rate-limit`, `file-type`, `adm-zip`) `[P]` `~10 menit`
+- [x] **1.1** Tambah 4 dependency baru ke `package.json` (`helmet`, `express-rate-limit`, `file-type`, `adm-zip`) `[P]` `~10 menit`
   - Edit `package.json` untuk entry `"helmet": "^8.0.0"`, `"express-rate-limit": "^7.4.0"`, `"file-type": "^16.5.0"`, `"adm-zip": "^0.5.0"`. Pastikan `express@^5.2.1` dan `multer@^2.3.0` tertulis eksplisit di `dependencies` (saat ini hanya `@adobe/pdfservices-node-sdk` + `formidable`).
   - Jalankan `npm install` di terminal `hazeverter-server`.
   - **Verify:** `node -e "require('helmet'); require('express-rate-limit'); require('file-type'); require('adm-zip'); console.log('ok')"` exit 0.
