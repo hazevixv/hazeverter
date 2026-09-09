@@ -1,22 +1,21 @@
-import { 
+const { 
   PDFServices, 
   Credentials, 
   ExportPDFJob, 
   ExportPDFParams, 
   ExportPDFTargetFormat 
-} from '@adobe/pdf-services-sdk';
-import formidable from 'formidable';
-import fs from 'fs';
-import path from 'path';
+} = require('@adobe/pdf-services-sdk');
+const formidable = require('formidable');
+const fs = require('fs');
 
-export const config = {
+module.exports.config = {
   api: {
-    bodyParser: false, // Wajib matikan bodyParser Vercel
+    bodyParser: false, // Wajib matikan bodyParser Vercel agar formidable bisa membaca file upload
   },
 };
 
-export default async function handler(req, res) {
-  // Setup Header CORS
+module.exports = async function handler(req, res) {
+  // Setup Header CORS agar bisa dipanggil oleh frontend
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Wajib arahkan uploadDir ke /tmp (direktori sementara Vercel)
+  // Wajib gunakan /tmp untuk direktori file sementara di Vercel Serverless
   const form = formidable({
     uploadDir: '/tmp',
     keepExtensions: true,
@@ -46,7 +45,7 @@ export default async function handler(req, res) {
       const clientSecret = process.env.ADOBE_CLIENT_SECRET;
 
       if (!clientId || !clientSecret) {
-        return res.status(500).json({ error: 'API Key Adobe belum dipasang di Environment Variables Vercel.' });
+        return res.status(500).json({ error: 'API Key Adobe belum diatur di Vercel Environment Variables.' });
       }
 
       // Inisialisasi Kredensial Adobe
@@ -57,7 +56,7 @@ export default async function handler(req, res) {
 
       const pdfServices = new PDFServices({ credentials });
 
-      // Ambil file yang di-upload
+      // Ambil file PDF yang di-upload
       const fileItem = Array.isArray(files.file) ? files.file[0] : files.file;
       if (!fileItem || !fileItem.filepath) {
         return res.status(400).json({ error: 'File PDF tidak terdeteksi.' });
@@ -66,7 +65,7 @@ export default async function handler(req, res) {
       const fileStream = fs.createReadStream(fileItem.filepath);
       const inputAsset = await pdfServices.upload({ stream: fileStream, mimeType: 'application/pdf' });
 
-      // Cek target format
+      // Cek format target (docx, pptx, xlsx)
       const rawTarget = Array.isArray(fields.targetType) ? fields.targetType[0] : fields.targetType;
       let targetFormat = ExportPDFTargetFormat.DOCX;
       if (rawTarget === 'pptx') targetFormat = ExportPDFTargetFormat.PPTX;
@@ -75,7 +74,7 @@ export default async function handler(req, res) {
       const params = new ExportPDFParams({ targetFormat });
       const job = new ExportPDFJob({ inputAsset, params });
 
-      // Submit ke Adobe Cloud
+      // Submit job ke Adobe Cloud Service
       const pollingURL = await pdfServices.submit({ job });
       const pdfServicesResponse = await pdfServices.getJobResult({ 
         pollingURL, 
@@ -84,18 +83,24 @@ export default async function handler(req, res) {
 
       const resultAsset = pdfServicesResponse.result?.asset;
       if (!resultAsset) {
-        throw new Error('Adobe tidak mengembalikan hasil file.');
+        throw new Error('Adobe Cloud tidak mengembalikan hasil file.');
       }
 
       const streamAsset = await pdfServices.getContent({ asset: resultAsset });
 
-      // Set header balasan file
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      
-      // Pipe stream ke response
+      // Set Content-Type sesuai hasil konversi
+      if (rawTarget === 'docx') {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      } else if (rawTarget === 'pptx') {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+      } else if (rawTarget === 'xlsx') {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      }
+
+      // Pipe stream langsung ke response client
       streamAsset.stream.pipe(res);
 
-      // Hapus file sementara di /tmp setelah selesai
+      // Bersihkan file sementara di folder /tmp setelah transmisi selesai
       streamAsset.stream.on('end', () => {
         try { fs.unlinkSync(fileItem.filepath); } catch (e) {}
       });
@@ -105,4 +110,4 @@ export default async function handler(req, res) {
       res.status(500).json({ error: error.message || 'Terjadi kesalahan saat mengonversi dokumen.' });
     }
   });
-}
+};
