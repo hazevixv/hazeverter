@@ -4,7 +4,7 @@ const {
   ExportPDFJob, 
   ExportPDFParams, 
   ExportPDFTargetFormat 
-} = require('@adobe/pdf-services-sdk');
+} = require('@adobe/pdfservices-node-sdk');
 const formidable = require('formidable');
 const fs = require('fs');
 
