@@ -1358,7 +1358,7 @@
         formData.append('file', this.files[0].file);
         formData.append('targetType', targetType);
 
-        const response = await fetch('http://localhost:3000/api/convert', {
+        const response = await fetch('/api/convert', {
           method: 'POST',
           body: formData
         });
