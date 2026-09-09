@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "Hazeverter PDF Utilities and Smart Scanner",
   "main": "index.html",
-  "engines": {
-    "node": "22.x"
-  },
   "dependencies": {
     "@adobe/pdfservices-node-sdk": "^4.1.0",
     "formidable": "^3.5.1"
