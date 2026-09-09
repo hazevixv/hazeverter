@@ -4,7 +4,7 @@
   "description": "Hazeverter PDF Utilities and Smart Scanner",
   "main": "index.html",
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "dependencies": {
     "@adobe/pdf-services-sdk": "^4.1.0",
